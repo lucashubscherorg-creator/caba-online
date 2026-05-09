@@ -137,62 +137,73 @@ io.on('connection', (socket) => {
   });
 });
 
+// ─── Serverless detection ─────────────────────────────────────────────────────
+// On Vercel (process.env.VERCEL === '1') we skip listen, background engines,
+// and process signal handlers — the serverless platform manages the lifecycle.
+
+const isServerless = Boolean(process.env.VERCEL);
+
 // ─── Background engines ───────────────────────────────────────────────────────
 
-startEventsEngine();
-startNewsScheduler();
+if (!isServerless) {
+  startEventsEngine();
+  startNewsScheduler();
+}
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
-function shutdown(signal: string): void {
-  logger.info(`Received ${signal}. Graceful shutdown initiated…`);
+if (!isServerless) {
+  function shutdown(signal: string): void {
+    logger.info(`Received ${signal}. Graceful shutdown initiated…`);
 
-  stopEventsEngine();
-  stopNewsScheduler();
+    stopEventsEngine();
+    stopNewsScheduler();
 
-  const forceExitTimer = setTimeout(() => {
-    logger.error('Graceful shutdown timed out. Forcing exit.');
-    process.exit(1);
-  }, 10_000);
+    const forceExitTimer = setTimeout(() => {
+      logger.error('Graceful shutdown timed out. Forcing exit.');
+      process.exit(1);
+    }, 10_000);
 
-  forceExitTimer.unref();
+    forceExitTimer.unref();
 
-  io.close(() => {
-    logger.info('Socket.io server closed');
-    httpServer.close(() => {
-      logger.info('HTTP server closed');
-      process.exit(0);
+    io.close(() => {
+      logger.info('Socket.io server closed');
+      httpServer.close(() => {
+        logger.info('HTTP server closed');
+        process.exit(0);
+      });
+    });
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  process.on('uncaughtException', (err) => {
+    logger.error('Uncaught exception — shutting down', {
+      message: err.message,
+      stack: err.stack,
+    });
+    shutdown('uncaughtException');
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled promise rejection', {
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
     });
   });
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-
-process.on('uncaughtException', (err) => {
-  logger.error('Uncaught exception — shutting down', {
-    message: err.message,
-    stack: err.stack,
-  });
-  shutdown('uncaughtException');
-});
-
-process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled promise rejection', {
-    reason: reason instanceof Error ? reason.message : String(reason),
-    stack: reason instanceof Error ? reason.stack : undefined,
-  });
-  // Log and continue — do not crash on unhandled rejections
-});
-
 // ─── Listen ───────────────────────────────────────────────────────────────────
 
-httpServer.listen(env.PORT, () => {
-  logger.info('CABA Online server running', {
-    port: env.PORT,
-    env: env.NODE_ENV,
-    client: env.CLIENT_URL,
+if (!isServerless) {
+  httpServer.listen(env.PORT, () => {
+    logger.info('CABA Online server running', {
+      port: env.PORT,
+      env: env.NODE_ENV,
+      client: env.CLIENT_URL,
+    });
   });
-});
+}
 
 export default app;

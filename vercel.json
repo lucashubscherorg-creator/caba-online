@@ -1,12 +1,12 @@
 {
   "version": 2,
   "name": "caba-online",
-  "buildCommand": "cd client && npm install && npm run build",
+  "buildCommand": "npm install && npm run build --workspace=client",
   "outputDirectory": "client/dist",
-  "installCommand": "cd client && npm install",
-  "framework": "vite",
+  "installCommand": "npm install",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
